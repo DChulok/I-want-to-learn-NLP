@@ -5,3 +5,5 @@ texput.log
 .DS_Store
 
 CoNLL-model/cache
+
+**/__pycache__
