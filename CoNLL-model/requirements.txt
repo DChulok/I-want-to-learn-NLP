@@ -1,0 +1,4 @@
+transformers~=4.3
+allennlp~=2.0
+seqeval~=1.2
+pytorch-crf~=0.7

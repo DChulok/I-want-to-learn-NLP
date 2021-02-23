@@ -3,3 +3,5 @@ texput.log
 .ipynb_checkpoints/
 
 .DS_Store
+
+CoNLL-model/cache
