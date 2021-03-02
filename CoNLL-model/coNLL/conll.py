@@ -25,6 +25,9 @@ class CoNLL_old():
         """
         
         split_labeled_text = []
+        if typ == 'train':
+            max_seq_len = 0
+        
         sentence = []
         for line in self.data[typ].split('\n'):
             if len(line)==0 or line.startswith('-DOCSTART') or line[0]=="\n":
@@ -45,8 +48,13 @@ class CoNLL_old():
             for s_l in sent:
                 sentence.append(s_l[0])
                 label.append(s_l[1])
+                seq_len = len(s_l[0])
+                if typ == 'train' and seq_len > max_seq_len:
+                    max_seq_len = seq_len
             self.sentences[typ].append(sentence)
             self.labels[typ].append(label)
+        
+        self.max_seq_len = max_seq_len
     
     
     def create_tag2idx(self, path):
