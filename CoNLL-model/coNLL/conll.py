@@ -98,7 +98,7 @@ class CoNLL(CoNLL_old):
         
     def create_one_labeled_data(self, typ):
         """
-        Creates a set of labels for sentences leaving just one special and 'O' (outside) token.
+        Creates a set of labels for sentences leaving just one "special" and 'O' (outside) token.
         We need it for model with more than 1 CRF heads.
         P.S. It considers, for example, B-LOC and I-LOC labels as one.
         """

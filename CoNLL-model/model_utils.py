@@ -1,3 +1,7 @@
+"""
+Some useful model utils.
+"""
+
 import tqdm
 import json
 
@@ -34,8 +38,9 @@ def eval_model(model, dataloader, device, conll):
             #predicted_tags = []
             for i, head in enumerate(model.heads.keys()):
                 # forward pass for every head separately
+                _b_head_labels = b_labels[:,i,:] if len(model.heads.keys()) > 1 else b_labels
                 epoch_head_loss[head] += model.get_one_head_loss(bilstm_logits, 
-                                                                b_labels[:,i,:], 
+                                                                _b_head_labels, 
                                                                 b_input_mask, 
                                                                 head).item()
                 # predicted indexes
@@ -58,8 +63,8 @@ def eval_model(model, dataloader, device, conll):
             epoch_head_loss[head] /= len(dataloader)
             mean_loss += epoch_head_loss[head]
 
-            _true_labels_with_pads = labels_[:,i,:].tolist()
-
+            _true_labels_with_pads = labels_[:,i,:].tolist() if len(model.heads.keys()) > 1 else labels_.tolist()
+            
             map_dict = conll.idx2one_tag[head]
             for tl in _true_labels_with_pads:
                 _true_labels = [map_dict[x] for x in tl if map_dict[x] != 'PAD']
@@ -171,8 +176,9 @@ def train(model, train_dataloader, optimizer, device, conll,
         
         ########## MODEL SAVING ###########
         if save_model and (e+1)%10 == 0:
-            bert_tokenizer.save_pretrained(path_to_save+f'BEbic_{e}_tokenizer_{ver}.pth')
+            #bert_tokenizer.save_pretrained(path_to_save+f'BEbic_{e}_tokenizer_{ver}.pth')
             checkpoint = {'epoch': e,
+                          'model': model,
                           'state_dict': model.state_dict(), 
                           'optimizer' : optimizer.state_dict()}
 
@@ -184,20 +190,75 @@ def train(model, train_dataloader, optimizer, device, conll,
         return loss_values
 
 
-def load_checkpoint(model, optimizer, tokenizer_path, checkpoint_path):
-    """Loads both tokenizer and our pretrained model"""
-    tokenizer = BertTokenizer.from_pretrained(tokenizer_path)
+def load_checkpoint(checkpoint_path, tokenizer_path=None):
+    """
+    Loads both tokenizer and our pretrained model
+    
+    Returns:
+    -------
+    bert_tokenizer
+    model
+    optimizer state_dict
+    
+    """
+    if tokenizer_path is not None:
+        tokenizer = BertTokenizer.from_pretrained(tokenizer_path)
     checkpoint = torch.load(checkpoint_path)
+    model = checkpoint['model']
     model.load_state_dict(checkpoint['state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
+
+    #optimizer.load_state_dict(checkpoint['optimizer'])
     #for parameter in model.parameters():
     #    parameter.requires_grad = False
 
     model.eval()
-    return tokenizer, model, optimizer
+    if tokenizer_path is not None:
+        return tokenizer, model, checkpoint['optimizer']
+    else:
+        return model, checkpoint['optimizer']
+
+    
+def eval_old(model, dataloader, device, idx2tag):
+    model.eval()
+
+    eval_loss = 0
+    predictions, true_labels = [], []
+
+    for batch in dataloader:
+        if device.type != 'cpu':
+            batch = tuple(t.to(device) for t in batch)
+        b_bert_ids, b_elmo_ids, b_labels, b_input_mask = batch
+
+        with torch.no_grad():
+            logits = model.forward(b_bert_ids, b_elmo_ids, b_input_mask.byte())
+            loss = -1*model.crf.forward(logits, b_labels, mask=b_input_mask.byte())
+            tags = model.crf.decode(logits, mask=b_input_mask.byte())
+
+        # move loss to cpu
+        eval_loss += loss.item()
+        predictions.extend(tags)
+        labels_ = b_labels.detach().cpu().numpy()
+        true_labels.extend(labels_)
+
+    eval_loss = eval_loss / len(dataloader)
+
+    all_predicted_tags = []
+    for s in predictions:
+        tag_names = [idx2tag[i] for i in s]
+        all_predicted_tags.append(tag_names)
+
+    all_true_tags = []
+    for s in true_labels:
+        tag_names = [idx2tag[i] for i in s if idx2tag[i] != 'PAD']
+        all_true_tags.append(tag_names)
+
+    acc = accuracy_score(all_predicted_tags, all_true_tags)
+    f1 = f1_score(all_predicted_tags, all_true_tags)
+    return eval_loss, acc, f1
+    
 
 
-def old_train(model, train_dataloader, optimizer, device, scheduler=None, n_epoch=5,
+def train_old(model, train_dataloader, optimizer, device, scheduler=None, n_epoch=5,
               max_grad_norm=None, validate=True, valid_dataloader=None,
               show_info=True, save_model=True):
     loss_values = []
@@ -223,10 +284,10 @@ def old_train(model, train_dataloader, optimizer, device, scheduler=None, n_epoc
         for step, batch in enumerator:
             if device.type != 'cpu':
                 batch = tuple(t.to(device) for t in batch)
-            b_elmo_ids, b_bert_ids, b_input_mask, b_labels = batch
+            b_bert_ids, b_elmo_ids, b_labels, b_input_mask = batch
             model.zero_grad()
 
-            logits = model.forward(b_elmo_ids, b_bert_ids, b_input_mask.byte())
+            logits = model.forward(b_bert_ids, b_elmo_ids, b_input_mask.byte())
             
             # because we need negative log likelyhood
             loss = -1*model.crf.forward(logits, b_labels, mask=b_input_mask.byte())
@@ -254,52 +315,16 @@ def old_train(model, train_dataloader, optimizer, device, scheduler=None, n_epoc
         loss_values.append(avg_train_loss)
 
         if validate and valid_dataloader is not None:
-          # Validation
-
-            model.eval()
-
-            eval_loss, eval_accuracy = 0, 0
-            predictions, true_labels = [], []
-
-            for batch in valid_dataloader:
-                if device.type != 'cpu':
-                    batch = tuple(t.to(device) for t in batch)
-                b_elmo_ids, b_bert_ids, b_input_mask, b_labels = batch
-
-                with torch.no_grad():
-                    logits = model.forward(b_elmo_ids, b_bert_ids, b_input_mask.byte())
-                    loss = -1*model.crf.forward(logits, b_labels, mask=b_input_mask.byte())
-                    tags = model.crf.decode(logits, mask=b_input_mask.byte())
-
-                # move loss to cpu
-                eval_loss += loss.item()
-                predictions.extend(tags)
-                labels_ = b_labels.detach().cpu().numpy()
-                true_labels.extend(labels_)
-
-            eval_loss = eval_loss / len(valid_dataloader)
-            validation_loss_values.append(eval_loss)
+            # Validation
+            eval_loss, valid_acc, valid_f1 = eval_old(model, valid_dataloader, device, idx2tag)
             if show_info:
                 print(f"Validation loss: {eval_loss}")
-
-            all_predicted_tags = []
-            for s in predictions:
-                tag_names = [idx2tag[i] for i in s]
-                all_predicted_tags.append(tag_names)
-
-            all_true_tags = []
-            for s in true_labels:
-                tag_names = [idx2tag[i] for i in s if idx2tag[i] != 'PAD']
-                all_true_tags.append(tag_names)
-
-            valid_acc = accuracy_score(all_predicted_tags, all_true_tags)
-            valid_f1 = f1_score(all_predicted_tags, all_true_tags)
-            valid_accuracies.append(valid_acc)
-            valid_f1_scores.append(valid_f1)
-
-            if show_info:
                 print(f"Validation accuracy: {valid_acc}")
                 print(f"Validation F1-score: {valid_f1}\n")
+            validation_loss_values.append(eval_loss)
+            valid_accuracies.append(valid_acc)
+            valid_f1_scores.append(valid_f1)
+            
             
         if save_model and (e+1)%10 == 0:
             tokenizer.save_pretrained(f'/content/drive/My Drive/models/ElMo_BERT_biLSTM_oneCRF_{e}_tokenizer.pth')
@@ -311,3 +336,4 @@ def old_train(model, train_dataloader, optimizer, device, scheduler=None, n_epoc
                         f'/content/drive/My Drive/models/ElMo_BERT_biLSTM_oneCRF_{e}_state_dict.pth')
 
     return loss_values, validation_loss_values, valid_accuracies, valid_f1_scores
+
