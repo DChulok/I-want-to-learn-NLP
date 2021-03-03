@@ -95,7 +95,7 @@ def create_dataloader(conll_obj, bert_tokenizer, tag_names=None, datatype='train
     data_labels = [[x[1][i] for x in data_tokenized] for i in range(num_of_heads)]
 
     if desired_pad=='max':
-        DISIRED_LENGTH = conll_obj.max_seq_len
+        DISIRED_LENGTH = np.max([len(sen) for sen in data_tokens])
     elif desired_pad=='mean':
         DISIRED_LENGTH = int(np.mean([len(sen) for sen in data_tokens]))
     elif isinstance(desired_pad, int):

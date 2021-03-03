@@ -10,6 +10,7 @@ import torch
 from transformers import BertTokenizer
 from seqeval.metrics import f1_score, accuracy_score
 
+
 def eval_model(model, dataloader, device, conll):
     """
     Evaluates BEbic model using given dataloader.
@@ -181,6 +182,7 @@ def train(model, train_dataloader, optimizer, device, conll,
                           'model': model,
                           'state_dict': model.state_dict(), 
                           'optimizer' : optimizer.state_dict()}
+            checkpoint['model_parameters'] = model.get_model_pars_dict()
 
             torch.save(checkpoint, path_to_save+f'BEbic_{e}_state_dict_{ver}.pth')
     
@@ -199,6 +201,7 @@ def load_checkpoint(checkpoint_path, tokenizer_path=None):
     bert_tokenizer
     model
     optimizer state_dict
+    model parameters dict
     
     """
     if tokenizer_path is not None:
@@ -213,9 +216,9 @@ def load_checkpoint(checkpoint_path, tokenizer_path=None):
 
     model.eval()
     if tokenizer_path is not None:
-        return tokenizer, model, checkpoint['optimizer']
+        return tokenizer, model, checkpoint['optimizer'], checkpoint['model_parameters']
     else:
-        return model, checkpoint['optimizer']
+        return model, checkpoint['optimizer'], checkpoint['model_parameters']
 
     
 def eval_old(model, dataloader, device, idx2tag):

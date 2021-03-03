@@ -6,6 +6,7 @@ Module for models storing.
 import torch
 from torch import nn
 
+
 class BEboC(nn.Module):
     """
     BERT+Elmo+biLSTM+one CRF
@@ -58,6 +59,21 @@ class BEboC(nn.Module):
         
         self.linear2 = nn.Linear(self.hidden_size*2, self.num_labels)
         self.crf = CRF(num_tags=self.num_labels, batch_first=True)
+    
+    def get_model_pars_dict(self):
+        """
+        Returns dict with described model's parameters.
+        
+        """
+        pars = {}
+        pars['hidden_size'] = self.hidden_size
+        pars['num_labels'] = self.num_labels
+        pars['elmo_layers'] = self.elmo_layers
+        pars['bert_layers'] = self.bert_layers
+        pars['concat_bert'] = int(self.concat_bert)
+        pars['bilstm_layers'] = self.bilstm_layers
+
+        return pars
     
     def forward(self, bert_ids, elmo_ids, attention_mask):
         """
