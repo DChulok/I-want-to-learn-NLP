@@ -51,18 +51,19 @@ def tokenize_and_preserve_labels(bert_tokenizer, sentence, all_labels):
     return tokenized_sentence, new_all_labels
     
 
-def create_dataloader(conll_obj, tag_names, bert_tokenizer, datatype='train', desired_pad='max', batch_size=128):
+def create_dataloader(conll_obj, bert_tokenizer, tag_names=None, datatype='train', desired_pad='max', batch_size=128):
     """
-    Creates dataloader for our model with multiple heads.
+    Creates dataloader for both our models.
 
     Parameters
     ----------
     
     conll_obj: object
-      instance of conll class (whith multiple heads)
-    tag_names: list of str
-      names of tags should be from keys of conll.conll.one_tag2idx
+      instance of conll class
     bert_tokenizer:
+    tag_names: list of str
+      names of tags should be from keys of conll.conll.one_tag2idx.
+        It should be given in case of multi-head model.
     datatype: str, default='train'
       'train'/'valid'/'test'
     desired_pad: str or int, default='max'
@@ -79,17 +80,22 @@ def create_dataloader(conll_obj, tag_names, bert_tokenizer, datatype='train', de
 
     """
     
+    # flag if we have multi- or one-head model
+    multi_head = hasattr(conll_obj, 'one_tag_dict')
     
-    num_of_heads = len(tag_names)
-    
-    _all_labels = [conll_obj.one_tag_dict[datatype][name] for name in tag_names]
+    if multi_head:
+        num_of_heads = len(tag_names)
+        _all_labels = [conll_obj.one_tag_dict[datatype][name] for name in tag_names]
+    else:
+        num_of_heads = 1
+        _all_labels = [conll_obj.labels[datatype]]
     
     data_tokenized = [tokenize_and_preserve_labels(bert_tokenizer, item[0], item[1:]) for item in zip(conll_obj.sentences[datatype], *_all_labels)]
     data_tokens = [x[0] for x in data_tokenized]
     data_labels = [[x[1][i] for x in data_tokenized] for i in range(num_of_heads)]
 
     if desired_pad=='max':
-        DISIRED_LENGTH = np.max([len(sen) for sen in data_tokens])
+        DISIRED_LENGTH = conll_obj.max_seq_len
     elif desired_pad=='mean':
         DISIRED_LENGTH = int(np.mean([len(sen) for sen in data_tokens]))
     elif isinstance(desired_pad, int):
@@ -101,9 +107,14 @@ def create_dataloader(conll_obj, tag_names, bert_tokenizer, datatype='train', de
                           maxlen=DISIRED_LENGTH, dtype="long", value=0.0,
                           truncating="post", padding="post")
   
-    data_tags = [pad_sequences([[conll_obj.one_tag2idx[name].get(l) for l in seq_labels] for seq_labels in data_labels[i]],
-                      maxlen=DISIRED_LENGTH, value=conll_obj.one_tag2idx[name]["PAD"], padding="post",
-                      dtype="long", truncating="post") for i, name in enumerate(tag_names)]
+    if multi_head:
+        data_tags = [pad_sequences([[conll_obj.one_tag2idx[name].get(l) for l in seq_labels] for seq_labels in data_labels[i]],
+                                  maxlen=DISIRED_LENGTH, value=conll_obj.one_tag2idx[name]["PAD"], padding="post",
+                                  dtype="long", truncating="post") for i, name in enumerate(tag_names)]
+    else:
+        data_tags = pad_sequences([[conll_obj.tag2idx.get(l) for l in seq_labels] for seq_labels in data_labels[0]],
+                           maxlen=DISIRED_LENGTH, value=conll_obj.tag2idx["PAD"], padding="post",
+                           dtype="long", truncating="post")
   
     data_masks = [[float(i != 0.0) for i in ii] for ii in data_ids]
     
@@ -139,7 +150,7 @@ def create_dataloader(conll_obj, tag_names, bert_tokenizer, datatype='train', de
 
 def union_labels(all_labels, tag_names, idx2one_tag=None, keep=None):
     """
-    Unions sequences of labels in one sequence (it's useful for multiple heads case)
+    Unions sequences of labels in one sequence (it could be useful for multiple heads case)
     We suppose that one token could has just one "special" tag.
     
     Parameters
@@ -197,54 +208,55 @@ def union_labels(all_labels, tag_names, idx2one_tag=None, keep=None):
     
 
 def create_dataloader_old(data, labels, tag2idx, tokenizer, datatype='train', desired_pad='max', batch_size=128):
-  """
-  Creates dataloader for one-head case.
+    """
+    THIS FUNCTION WILL BE DELETED
+    Creates dataloader for one-head case.
 
-  returns: TensorDataset, RandomSampler (for valid and test SequentialSampler), DataLoader
-  """
-  data_tokenized = [tokenize_and_preserve_labels(tokenizer, s, [l]) for s, l in zip(data, labels)]
-  data_tokens = [x[0] for x in data_tokenized]
-  data_labels = [x[1][0] for x in data_tokenized]
+    returns: TensorDataset, RandomSampler (for valid and test SequentialSampler), DataLoader
+    """
+    data_tokenized = [tokenize_and_preserve_labels(tokenizer, s, [l]) for s, l in zip(data, labels)]
+    data_tokens = [x[0] for x in data_tokenized]
+    data_labels = [x[1][0] for x in data_tokenized]
 
-  if desired_pad=='max':
-    DISIRED_LENGTH = np.max([len(sen) for sen in data_tokens])
-  elif desired_pad=='mean':
-    DISIRED_LENGTH = int(np.mean([len(sen) for sen in data_tokens]))
-  elif isinstance(desired_pad, int):
-    DISIRED_LENGTH = desired_pad
-  else:
-    raise ValueError("How it should be padded?")
+    if desired_pad=='max':
+        DISIRED_LENGTH = np.max([len(sen) for sen in data_tokens])
+    elif desired_pad=='mean':
+        DISIRED_LENGTH = int(np.mean([len(sen) for sen in data_tokens]))
+    elif isinstance(desired_pad, int):
+        DISIRED_LENGTH = desired_pad
+    else:
+        raise ValueError("How it should be padded?")
   
-  data_ids = pad_sequences([tokenizer.convert_tokens_to_ids(txt) for txt in data_tokens],
-                          maxlen=DISIRED_LENGTH, dtype="long", value=0.0,
-                          truncating="post", padding="post")
+    data_ids = pad_sequences([tokenizer.convert_tokens_to_ids(txt) for txt in data_tokens],
+                              maxlen=DISIRED_LENGTH, dtype="long", value=0.0,
+                              truncating="post", padding="post")
   
-  data_tags = pad_sequences([[tag2idx[l] for l in seq_labels] for seq_labels in data_labels],
-                     maxlen=DISIRED_LENGTH, value=tag2idx["PAD"], padding="post",
-                     dtype="long", truncating="post")
+    data_tags = pad_sequences([[tag2idx[l] for l in seq_labels] for seq_labels in data_labels],
+                                maxlen=DISIRED_LENGTH, value=tag2idx["PAD"], padding="post",
+                                dtype="long", truncating="post")
   
-  data_masks = [[float(i != 0.0) for i in ii] for ii in data_ids]
+    data_masks = [[float(i != 0.0) for i in ii] for ii in data_ids]
 
-  # Creating tensors
-  data_elmo_ids = batch_to_ids(data_tokens)
-  data_bert_ids = torch.tensor(data_ids)
-  data_tags = torch.tensor(data_tags)
-  data_masks = torch.tensor(data_masks)
+    # Creating tensors
+    data_elmo_ids = batch_to_ids(data_tokens)
+    data_bert_ids = torch.tensor(data_ids)
+    data_tags = torch.tensor(data_tags)
+    data_masks = torch.tensor(data_masks)
 
-  # We need to pad elmo ids to have the same sequence length as BERT.
-  if data_elmo_ids.shape[1] < data_bert_ids.shape[1]:
-    data_elmo_ids = torch.cat((data_elmo_ids,
-                                torch.zeros((data_elmo_ids.shape[0],
-                                             data_bert_ids.shape[1]-data_elmo_ids.shape[1],
-                                             data_elmo_ids.shape[2]))), dim=1).type(torch.LongTensor)
+    # We need to pad elmo ids to have the same sequence length as BERT.
+    if data_elmo_ids.shape[1] < data_bert_ids.shape[1]:
+        data_elmo_ids = torch.cat((data_elmo_ids,
+                                   torch.zeros((data_elmo_ids.shape[0],
+                                                data_bert_ids.shape[1]-data_elmo_ids.shape[1],
+                                                data_elmo_ids.shape[2]))), dim=1).type(torch.LongTensor)
     
-  data_dataset = TensorDataset(data_bert_ids, data_elmo_ids, data_tags, data_masks)
-  if datatype == 'train':
-    data_sampler = RandomSampler(data_dataset)
-  else:
-    data_sampler = SequentialSampler(data_dataset)
-  data_dataloader = DataLoader(data_dataset, sampler=data_sampler, batch_size=batch_size)
+    data_dataset = TensorDataset(data_bert_ids, data_elmo_ids, data_tags, data_masks)
+    if datatype == 'train':
+        data_sampler = RandomSampler(data_dataset)
+    else:
+        data_sampler = SequentialSampler(data_dataset)
+    data_dataloader = DataLoader(data_dataset, sampler=data_sampler, batch_size=batch_size)
 
-  return data_dataset, data_sampler, data_dataloader
+    return data_dataset, data_sampler, data_dataloader
 
     
