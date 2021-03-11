@@ -261,7 +261,7 @@ def eval_old(model, dataloader, device, idx2tag):
     
 
 
-def train_old(model, train_dataloader, optimizer, device, scheduler=None, n_epoch=5,
+def train_old(model, train_dataloader, optimizer, idx2tag, device, scheduler=None, n_epoch=5,
               max_grad_norm=None, validate=True, valid_dataloader=None,
               show_info=True, save_model=True):
     loss_values = []

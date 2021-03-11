@@ -5,6 +5,9 @@ Module for models storing.
 
 import torch
 from torch import nn
+from transformers import BertForTokenClassification
+
+from bert_config import *
 
 
 class BEboC(nn.Module):

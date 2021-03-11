@@ -209,7 +209,6 @@ def union_labels(all_labels, tag_names, idx2one_tag=None, keep=None):
 
 def create_dataloader_old(data, labels, tag2idx, tokenizer, datatype='train', desired_pad='max', batch_size=128):
     """
-    THIS FUNCTION WILL BE DELETED
     Creates dataloader for one-head case.
 
     returns: TensorDataset, RandomSampler (for valid and test SequentialSampler), DataLoader
