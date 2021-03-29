@@ -115,7 +115,7 @@ def train(model, train_dataloader, optimizer, device, conll,
 
     """
     loss_values = []
-    if valid_dataloader is not None:
+    if valid_dataloader:
         head_results = {head: {'losses': [], 'accs': [], 'f1': []} for head in model.heads.keys()}
 
     for e in range(n_epoch):
@@ -147,13 +147,13 @@ def train(model, train_dataloader, optimizer, device, conll,
             if show_info and (step+1) % 10 == 0:
                 print(f"\n{step}: avg loss per batch: {total_loss/(step*model.num_heads)}\n")
 
-            if max_grad_norm is not None:
+            if max_grad_norm:
                 torch.nn.utils.clip_grad_norm_(parameters=model.parameters(),
                                             max_norm=max_grad_norm)
 
             optimizer.step()
 
-            if scheduler is not None:
+            if scheduler:
                 scheduler.step()
 
         avg_train_loss = total_loss / len(train_dataloader) / model.num_heads
@@ -163,17 +163,18 @@ def train(model, train_dataloader, optimizer, device, conll,
         loss_values.append(avg_train_loss)
 
         ########## VALIDATION ############
-        if valid_dataloader is not None:
+        if valid_dataloader:
             head_result, mean_loss, mean_acc, mean_f1 = eval_model(model, valid_dataloader, device, conll)
             
             for head in model.heads.keys():
+                head_results[head]['losses'].append(mean_loss)
                 head_results[head]['accs'].append(head_result[head]['acc'])
                 head_results[head]['f1'].append(head_result[head]['f1'])
 
             if show_info:
-                print(f"Mean validation loss: {mean_loss/model.num_heads}")
-                print(f"Mean validation accuracy: {mean_acc/model.num_heads}")
-                print(f"Mean validation F1-score: {mean_f1/model.num_heads}\n")
+                print(f"Mean validation loss: {mean_loss}")
+                print(f"Mean validation accuracy: {mean_acc}")
+                print(f"Mean validation F1-score: {mean_f1}\n")
         
         ########## MODEL SAVING ###########
         if save_model and (e+1)%10 == 0:
@@ -186,7 +187,7 @@ def train(model, train_dataloader, optimizer, device, conll,
 
             torch.save(checkpoint, path_to_save+f'BEbic_{e}_state_dict_{ver}.pth')
     
-    if valid_dataloader is not None:
+    if valid_dataloader:
         return loss_values, head_results
     else:
         return loss_values

@@ -51,7 +51,7 @@ def tokenize_and_preserve_labels(bert_tokenizer, sentence, all_labels):
     return tokenized_sentence, new_all_labels
     
 
-def create_dataloader(conll_obj, bert_tokenizer, tag_names=None, datatype='train', desired_pad='max', batch_size=128):
+def create_dataloader(conll_obj, bert_tokenizer, tag_names=None, datatype='train', desired_pad='max', batch_size=128, indexes=None):
     """
     Creates dataloader for both our models.
 
@@ -69,6 +69,8 @@ def create_dataloader(conll_obj, bert_tokenizer, tag_names=None, datatype='train
     desired_pad: str or int, default='max'
       'max'/'mean'/int
     batch_size: int, default=128
+    indexes: list, default=None
+      list of samples' indexes to be considered
 
     Returns
     -------
@@ -80,7 +82,7 @@ def create_dataloader(conll_obj, bert_tokenizer, tag_names=None, datatype='train
 
     """
     
-    # flag if we have multi- or one-head model
+    # flag that shows if we have multi- or one-head model
     multi_head = hasattr(conll_obj, 'one_tag_dict')
     
     if multi_head:
@@ -90,7 +92,14 @@ def create_dataloader(conll_obj, bert_tokenizer, tag_names=None, datatype='train
         num_of_heads = 1
         _all_labels = [conll_obj.labels[datatype]]
     
-    data_tokenized = [tokenize_and_preserve_labels(bert_tokenizer, item[0], item[1:]) for item in zip(conll_obj.sentences[datatype], *_all_labels)]
+    if indexes is not None:
+        indexes = np.array(indexes)
+        _all_labels = [np.array(item, dtype=object)[indexes] for item in _all_labels]
+        sentences = np.array(conll_obj.sentences[datatype], dtype=object)[indexes]
+    else:
+        sentences = conll_obj.sentences[datatype]
+
+    data_tokenized = [tokenize_and_preserve_labels(bert_tokenizer, item[0], item[1:]) for item in zip(sentences, *_all_labels)]
     data_tokens = [x[0] for x in data_tokenized]
     data_labels = [[x[1][i] for x in data_tokenized] for i in range(num_of_heads)]
 
