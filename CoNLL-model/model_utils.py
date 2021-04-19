@@ -84,7 +84,7 @@ def eval_model(model, dataloader, device, conll):
 def train(model, train_dataloader, optimizer, device, conll,
           scheduler=None, n_epoch=5,
           max_grad_norm=None, valid_dataloader=None, show_info=True, 
-          save_model=True, path_to_save=None, ver='v1'):
+          save_model=True, path_to_save=None):
     """
     Trains BEbic model.
 
@@ -101,11 +101,9 @@ def train(model, train_dataloader, optimizer, device, conll,
     show_info: bool, default=True
       Whether to print messages.
     save_model: bool, default=True
-      Whether to save model
+      Whether to save model (it's possible only when valid_dataloader is not None)
     path_to_save: str, default=None
       Where to save model
-    ver: str, default='v1'
-      Model's version
 
     Return:
     -------
@@ -118,6 +116,7 @@ def train(model, train_dataloader, optimizer, device, conll,
     if valid_dataloader:
         head_results = {head: {'losses': [], 'accs': [], 'f1': []} for head in model.heads.keys()}
 
+    best_mean_f1 = 0
     for e in range(n_epoch):
         if show_info:
           print(f"\nEpoch #{e}")
@@ -177,7 +176,8 @@ def train(model, train_dataloader, optimizer, device, conll,
                 print(f"Mean validation F1-score: {mean_f1}\n")
         
         ########## MODEL SAVING ###########
-        if save_model and (e+1)%10 == 0:
+        if save_model and mean_f1 > best_mean_f1:
+            best_mean_f1 = mean_f1
             #bert_tokenizer.save_pretrained(path_to_save+f'BEbic_{e}_tokenizer_{ver}.pth')
             checkpoint = {'epoch': e,
                           'model': model,
@@ -185,7 +185,7 @@ def train(model, train_dataloader, optimizer, device, conll,
                           'optimizer' : optimizer.state_dict()}
             checkpoint['model_parameters'] = model.get_model_pars_dict()
 
-            torch.save(checkpoint, path_to_save+f'BEbic_{e}_state_dict_{ver}.pth')
+            torch.save(checkpoint, path_to_save)
     
     if valid_dataloader:
         return loss_values, head_results
@@ -264,8 +264,9 @@ def eval_old(model, dataloader, device, idx2tag):
 
 def train_old(model, train_dataloader, optimizer, idx2tag, device, scheduler=None, n_epoch=5,
               max_grad_norm=None, validate=True, valid_dataloader=None,
-              show_info=True, save_model=True):
+              show_info=True, save_model=True, save_path=None):
     loss_values = []
+    best_valid_f1 = 0
     if validate and valid_dataloader is not None:
         validation_loss_values = []
         valid_accuracies = []
@@ -330,14 +331,16 @@ def train_old(model, train_dataloader, optimizer, idx2tag, device, scheduler=Non
             valid_f1_scores.append(valid_f1)
             
             
-        if save_model and (e+1)%10 == 0:
-            tokenizer.save_pretrained(f'/content/drive/My Drive/models/ElMo_BERT_biLSTM_oneCRF_{e}_tokenizer.pth')
-            checkpoint = {'model': BEboC(hidden_size=512, bert_layers=2),
+        if save_model and best_valid_f1 < valid_f1:
+            best_valid_f1 = valid_f1
+            #tokenizer.save_pretrained(f'/content/drive/My Drive/models/ElMo_BERT_biLSTM_oneCRF_{e+1}_tokenizer.pth')
+            checkpoint = {'epoch': e,
+                          'model': model,
                           'state_dict': model.state_dict(), 
                           'optimizer' : optimizer.state_dict()}
+            checkpoint['model_parameters'] = model.get_model_pars_dict()
 
-            torch.save(checkpoint,
-                        f'/content/drive/My Drive/models/ElMo_BERT_biLSTM_oneCRF_{e}_state_dict.pth')
+            torch.save(checkpoint, save_path)
 
     return loss_values, validation_loss_values, valid_accuracies, valid_f1_scores
 
