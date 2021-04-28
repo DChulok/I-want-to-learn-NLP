@@ -82,8 +82,8 @@ def eval_model(model, dataloader, device, conll):
 
 
 def train(model, train_dataloader, optimizer, device, conll,
-          scheduler=None, n_epoch=5,
-          max_grad_norm=None, valid_dataloader=None, show_info=True, 
+          scheduler=None, n_epoch=5, max_grad_norm=None,
+          early_stopping_steps=None, valid_dataloader=None, show_info=True, 
           save_model=True, path_to_save=None):
     """
     Trains BEbic model.
@@ -97,6 +97,7 @@ def train(model, train_dataloader, optimizer, device, conll,
     scheduler: default=None
     n_epoch: int, default=5
     max_grad_norm: default=None
+    early_stopping_steps: int, default=None
     valid_dataloader: default=None
     show_info: bool, default=True
       Whether to print messages.
@@ -116,7 +117,10 @@ def train(model, train_dataloader, optimizer, device, conll,
     if valid_dataloader:
         head_results = {head: {'losses': [], 'accs': [], 'f1': []} for head in model.heads.keys()}
 
-    best_mean_f1 = 0
+    best_result = 0
+    n_bad_steps = 0
+    force_save = False
+
     for e in range(n_epoch):
         if show_info:
           print(f"\nEpoch #{e}")
@@ -175,9 +179,30 @@ def train(model, train_dataloader, optimizer, device, conll,
                 print(f"Mean validation accuracy: {mean_acc}")
                 print(f"Mean validation F1-score: {mean_f1}\n")
         
+            if mean_f1 > best_result:
+                best_result = mean_f1
+                n_bad_steps = 0
+                force_save = True
+            else:
+                n_bad_steps += 1
+                force_save = False
+        else: # if early stopping without validation -> use train losses
+            if avg_train_loss > best_result:
+                best_result = avg_train_loss
+                n_bad_steps = 0
+                force_save = True
+            else:
+                n_bad_steps += 1
+                force_save = False
+        # early stopping
+        if n_bad_steps == early_stopping_steps:
+            if valid_dataloader:
+                return loss_values, head_results
+            else:
+                return loss_values
+
         ########## MODEL SAVING ###########
-        if save_model and mean_f1 > best_mean_f1:
-            best_mean_f1 = mean_f1
+        if save_model and force_save:
             #bert_tokenizer.save_pretrained(path_to_save+f'BEbic_{e}_tokenizer_{ver}.pth')
             checkpoint = {'epoch': e,
                           'model': model,
@@ -263,11 +288,14 @@ def eval_old(model, dataloader, device, idx2tag):
 
 
 def train_old(model, train_dataloader, optimizer, idx2tag, device, scheduler=None, n_epoch=5,
-              max_grad_norm=None, validate=True, valid_dataloader=None,
+              max_grad_norm=None, early_stopping_steps=None, valid_dataloader=None,
               show_info=True, save_model=True, save_path=None):
     loss_values = []
-    best_valid_f1 = 0
-    if validate and valid_dataloader is not None:
+    best_result = 0
+    n_bad_steps = 0
+    force_save = False
+
+    if valid_dataloader:
         validation_loss_values = []
         valid_accuracies = []
         valid_f1_scores = []
@@ -319,20 +347,40 @@ def train_old(model, train_dataloader, optimizer, idx2tag, device, scheduler=Non
 
         loss_values.append(avg_train_loss)
 
-        if validate and valid_dataloader is not None:
+        if valid_dataloader:
             # Validation
-            eval_loss, valid_acc, valid_f1 = eval_old(model, valid_dataloader, device, idx2tag)
+            valid_loss, valid_acc, valid_f1 = eval_old(model, valid_dataloader, device, idx2tag)
             if show_info:
-                print(f"Validation loss: {eval_loss}")
+                print(f"Validation loss: {valid_loss}")
                 print(f"Validation accuracy: {valid_acc}")
                 print(f"Validation F1-score: {valid_f1}\n")
-            validation_loss_values.append(eval_loss)
+            validation_loss_values.append(valid_loss)
             valid_accuracies.append(valid_acc)
             valid_f1_scores.append(valid_f1)
+            if valid_f1 > best_result:
+                best_result = valid_f1
+                n_bad_steps = 0
+                force_save = True
+            else:
+                n_bad_steps += 1
+                force_save = False
+        else:# if early stopping without validation -> use train losses
+            if avg_train_loss > best_result:
+                best_result = avg_train_loss
+                n_bad_steps = 0
+                force_save = True
+            else:
+                n_bad_steps += 1
+                force_save = False
+
+        # early stopping
+        if n_bad_steps == early_stopping_steps:
+            if valid_dataloader:
+                return loss_values, head_results
+            else:
+                return loss_values    
             
-            
-        if save_model and best_valid_f1 < valid_f1:
-            best_valid_f1 = valid_f1
+        if save_model and force_save:
             #tokenizer.save_pretrained(f'/content/drive/My Drive/models/ElMo_BERT_biLSTM_oneCRF_{e+1}_tokenizer.pth')
             checkpoint = {'epoch': e,
                           'model': model,
